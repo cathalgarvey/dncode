@@ -1,0 +1,9 @@
+import sys, itertools
+mode, output, code = sys.argv[1][0], sys.stdout.buffer, b'ACGT'
+encode_table = dict(zip((b''.join((chr(y).encode() for y in x)) for x in itertools.product(code,code,code,code)), range(256)))
+decode_table = dict( ((v,k) for k,v in encode_table.items()) )
+with open(sys.argv[2],'rb') as I: inp = b''.join([L.strip() for L in I]).strip()
+if mode == "e":
+  for quad in [inp[i: i+4] for i in range(0, len(inp), 4)]:output.write( encode_table[ quad + (b'A' * (4-len(quad)) ) ].to_bytes(1,'big') )
+  else: output.write( (len(quad)%4).to_bytes(1,'big') )
+else: print(b''.join((decode_table[x] for x in inp[:-1]))[:-inp[-1] if inp[-1] else None].decode())

@@ -1,6 +1,6 @@
 import sys, itertools
 mode,output,code,i2b=sys.argv[1][0],sys.stdout.buffer,b'ACGT',lambda i:i.to_bytes(1,'big')
-encode_table=dict(zip((b''.join((chr(y).encode()for y in x))for x in itertools.product(*(code,)*4)),range(256)))
+encode_table=dict(zip((b''.join((i2b(y)for y in x))for x in itertools.product(*(code,)*4)),range(256)))
 decode_table=dict(((v,k) for k,v in encode_table.items()))
 with open(sys.argv[2],'rb')as I:inp=b''.join([L.strip()for L in I]).strip()
 if mode == "e":

@@ -11,4 +11,4 @@ makedna.py
 build/
 dist/
 dncode.egg-info/
-
+benchmarks/

@@ -1,0 +1,14 @@
+makedna.py
+# ignore editor leftovers
+.*.sw*
+.*~
+*~
+
+# ignore precompiled python files
+*.pyc
+
+# ignore setup stuff
+build/
+dist/
+dncode.egg-info/
+

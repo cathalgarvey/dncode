@@ -46,3 +46,9 @@ format for biological sequence data; that is, to encode DNA/RNA using dncode
 prior to using Gzip or lzma. After increasing the information density of
 the DNA through binary encoding, the ultimate compression ratio after gzip
 may be superior to gzip alone, with (again) low additional overhead.
+
+### Where From Here
+* Clean up dncode.py a bit, maybe hack out tests to another file.
+* Re-optimise for module usage.
+* Test and implement post-dncoding gzip, adding a "gzipped" flag to metabyte
+* Optimise for further speed; use iterators where possible to enhance use on large sequence files.

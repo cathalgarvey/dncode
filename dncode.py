@@ -1,8 +1,8 @@
-import sys, itertools
-i2b,outs=lambda i:i.to_bytes(1,'big'),[sys.stdout.buffer.write,lambda s:0]
-enct=dict(zip((b''.join((i2b(y)for y in x))for x in itertools.product(*(b'ACGT',)*4)),range(256)))
-dect,_=dict(((v,k) for k,v in enct.items())),outs.reverse()if sys.argv[1][0]=="d"else 0
-with open(sys.argv[2],'rb')as I:inp=b''.join([L.strip()for L in I]).strip()
-for q in [inp[i: i+4]for i in range(0,len(inp),4)]:outs[0](i2b(enct.get(q+(b'A'*(4-len(q))),0)))
-else:outs[0](i2b(len(q)%4))
-outs[1](b''.join((dect.get(x,b'')for x in inp[:-1]))[:-inp[-1]if inp[-1]else None]+b'\n')
+import sys as s, itertools as i
+t,u,i2b,o=b'T',b'U',lambda i:i.to_bytes(1,'big'),[s.stdout.buffer.write,lambda s:0]
+A,e=s.argv,dict(zip((''.join(x).encode()for x in i.product(*('ACGT',)*4)),map(i2b,range(256))))
+with open(A[2],'rb')as I:D,Rr=b''.join(I.read().strip().split()),lambda s:s.replace(t,u)
+S,R,M,o,d=D[:-1],D[-1]&4,D[-1]&2,o[::-1]if A[1]=="d"else o,dict(zip(e.values(),e)).get
+[o[0](e.get(q.replace(u,t)+(b'A'*(4-len(q)))))for q in(D[i: i+4] for i in range(0,len(D),4))]
+o[0](i2b((len( [D[i: i+4] for i in range(0,len(D),4)][-1] )%4)|(4 if u in S else 0)))
+o[1](b''.join(Rr(d(i2b(x)))if R else d(x)for x in S)[:-M if M else None]+b'\n')

@@ -49,6 +49,6 @@ may be superior to gzip alone, with (again) low additional overhead.
 
 ### Where From Here
 * Clean up dncode.py a bit, maybe hack out tests to another file.
-* Re-optimise for module usage.
+* Re-optimise for module usage and rearrange for setuptools/pip installation.
 * Test and implement post-dncoding gzip, adding a "gzipped" flag to metabyte
 * Optimise for further speed; use iterators where possible to enhance use on large sequence files.

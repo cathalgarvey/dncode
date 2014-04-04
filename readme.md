@@ -1,7 +1,8 @@
-# DNcode - A 4x compression encoding for simple nucleotide sequences.
+# DNcode
+## A 4x compression encoding for simple nucleotide sequences.
 by Cathal Garvey, copyright 2014, released under the GNU AGPL: see COPYING.txt
 
-## What
+### What
 DNA sequence data can be quite large yet, in terms of computer-storage,
 information-sparse. DNA has only four characters, for example, yet
 compression algorithms are optimised for information-dense data like
@@ -24,10 +25,10 @@ DNcode started as a Gist consisting of increasingly incomprehensible
 performance versus gzip I have rewritten and modularised it for further
 use.
 
-## How
+### How
 For usage information, call `dncode_readable.py -h`.
 
-## For What
+### For What
 Given the speed and excellent compression of small sequences, this would
 be ideal for reducing the size of databases consisting of smaller elements,
 such as barcodes.

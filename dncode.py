@@ -21,14 +21,14 @@ def load_fasta(f, keep_non_acgtu = False):
     return title, sequence
 
 # Create tables
-encoding_table = {}
-decoding_table = {}
+acgt_encoding_table = {}
+acgt_decoding_table = {}
 
 # For every four-letter combination of ACGT (256 possibilities):
 for n, n4 in enumerate((''.join(x) for x in itertools.product(*('ACGT',)*4))):
     n = n.to_bytes(1,'big')
-    encoding_table[n4] = n
-    decoding_table[n] = n4
+    acgt_encoding_table[n4] = n
+    acgt_decoding_table[n] = n4
 
 def get_encbyte(mask_len, rna=False, gzipped=False):
     '''The final byte of an encoded sequence is of form (binary):
@@ -70,15 +70,43 @@ def encode(code, rna=False):
     code = code.upper().replace("U","T")
     quadl = 0
     for quad in [ code[i: i+4] for i in range(0, len(code), 4) ]:
-        # Pads anything less than 4n with "A"; this should always be
-        # the last chunk anyway, so handling masking occurs in the "else" block
         quadl = len(quad)
-        enc_dna = encoding_table[ quad + ('A'*(4- quadl)) ]
+        try:
+            enc_dna = acgt_encoding_table[quad]
+        except KeyError:
+            # Should only evaluate on last quad, making all preceding lookups faster.
+            enc_dna = acgt_encoding_table[ quad + ( "A" * (4 - quadl) ) ]
         output.append(enc_dna)
     else:
         mask = (4 - quadl) % 4 # Can only be 0-3, leaving unused byte-space..
         output.append( get_encbyte(mask, rna) )
     return b''.join(output)
+
+def iter_encode(code_iter, table = acgt_encoding_table, rna=False):
+    '''Iterates over sequences, preventing large sequence files being loaded into RAM.
+    Yields encoded sequence bytes plus final encoding byte.'''
+    # Create four iterators; one for each of four frames to iterate in steps of four.
+    # Then zip these frames and use map to combine them into quadlets. Using
+    # filter in the arguments to 'join' prevents a TypeError on last block if any
+    # NoneType values are yielded from the zip_longest iterator.
+    fr1, fr2, fr3, fr4 = [itertools.islice(code_iter, i, None, 4) for i in range(4)]
+    framezip = itertools.zip_longest(fr1,fr2,fr3,fr4)
+    zip_quads = map(lambda t:''.join(filter(None,t)), framezip)
+    seql = 0
+    for quad in zip_quads:
+        try:
+            enc_dna = acgt_encoding_table[quad]
+            seql += 4
+        except KeyError:
+            # Should only evaluate on last quad, making all preceding lookups faster.
+            enc_dna = acgt_encoding_table[ quad + ( "A" * (4 - len(quad)) ) ]
+            seql += len(quad)
+        yield enc_dna
+    else:
+        # Generate and yield final byte.
+        mask = (4 - len(quad)) % 4 # Can only be 0-3, leaving unused byte-space..
+        yield get_encbyte(mask, rna)
+    
 
 def decode(enccode):
     encbyte = enccode[-1]
@@ -86,7 +114,7 @@ def decode(enccode):
     enccode = enccode[:-1]
     output = []
     for b in enccode:
-        output.append( decoding_table[b.to_bytes(1,'big')] )
+        output.append( acgt_decoding_table[b.to_bytes(1,'big')] )
     # Make code equal to the original sequence minus the mask.
     # Must do "mask_len or None" because str[:-0] is the same as str[:0]: ''!
     code = ''.join(output[ : -encoding['mask_len'] or None ])

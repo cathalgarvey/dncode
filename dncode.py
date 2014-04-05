@@ -4,6 +4,22 @@ import unittest
 import binascii  # Prefer to store specified testcases as hex in this file.
 import random    # For generating random test cases.
 
+def load_fasta(f, keep_non_acgtu = False):
+    title = ''
+    sequence = []
+    for line in f.splitlines():
+        line = line.strip()
+        if line[0] == ">":
+            title = line.lstrip(">").strip()
+        elif line[0] == ";":
+            continue
+        else:
+            sequence.append(line)
+    sequence = ''.join(
+        filter(None if not keep_non_acgtu else(lambda s:s in 'ACGTU'),itertools.chain(*sequence))
+        )
+    return title, sequence
+
 # Create tables
 encoding_table = {}
 decoding_table = {}
@@ -14,28 +30,30 @@ for n, n4 in enumerate((''.join(x) for x in itertools.product(*('ACGT',)*4))):
     encoding_table[n4] = n
     decoding_table[n] = n4
 
-def get_encbyte(mask_len, rna=False):
+def get_encbyte(mask_len, rna=False, gzipped=False):
     '''The final byte of an encoded sequence is of form (binary):
-    |unused|unused|unused|unused|unused|rna|mask|mask|
+    |unused|unused|unused|unused|gzipped|rna|mask|mask|
     ..that is, the length of the final n-quad mask is obtained using only
     the final two bits of the mask, and the third-last bit is 1 if RNA, 0 else.
     The remaining 5 bits are unspecified at present.
     '''
     if not 0 <= mask_len <= 3:
         raise ValueError("Mask length can only be 0-3.")
-    if rna:
-        rna = 1<<2
     mask  = 0
     mask |= mask_len
-    mask |= rna
+    if rna:
+        mask |= 1<<2
+    if gzipped:
+        mask |= 1<<3    
     return mask.to_bytes(1, 'big')
 
 def decode_encbyte(encbyte):
     'Decodes a byte as encoded by get_encbyte'
     #encbyte = int.from_byte(encbyte, 'big') # Be explicit on endianness
-    mask_len = encbyte & 3 # Discarding bits before final 2
-    rna = True if encbyte & 1<<2 else False
-    return {'mask_len':mask_len, 'rna':rna}
+    return dict(
+    mask_len = encbyte & 3,
+    rna      = True if encbyte & 1<<2 else False,
+    gzipped  = True if encbyte & 1<<3 else False )
 
 def encode(code, rna=False):
     '''Outputs a bytestring consisting of the encoded DNA, plus a mask byte.
@@ -148,28 +166,33 @@ if __name__ == "__main__":
     benchP = subP.add_parser("bench", help="Run test cases")
     benchP.set_defaults(mode='bench')
 
-    compressP = subP.add_parser("c", help="Compress a sequence file")
+    compressP = subP.add_parser("compress", help="Compress a sequence file")
     compressP.set_defaults(mode='compress')    
-    compressP.add_argument("Dut", type=argparse.FileType("r"), default=sys.stdin,
+    compressP.add_argument("input", type=argparse.FileType("r"), default=sys.stdin,
         help="Input file to read; should be plain sequence data. Default stdin.")
     compressP.add_argument("-o","--output", type=argparse.FileType("wb"), default=sys.stdout.buffer,
         help="Output file to write compressed data to. Default stdout.")
 
-    decompressP = subP.add_parser("d", help="Compress a sequence file")
+    decompressP = subP.add_parser("decompress", help="Compress a sequence file")
     decompressP.set_defaults(mode='decompress')
-    decompressP.add_argument("Dut", type=argparse.FileType("rb"), default=sys.stdin.buffer,
+    decompressP.add_argument("input", type=argparse.FileType("rb"), default=sys.stdin.buffer,
         help="Input file to read; should be plain sequence data. Default stdin.")
     decompressP.add_argument("-o","--output", type=argparse.FileType("w"), default=sys.stdout,
         help="Output file to write decompressed sequence to. Default stdout.")
 
     A = P.parse_args()
-    
     # Check and run test
+    if not hasattr(A, 'mode'):
+        # Tried setting a default mode to catch modeless operation but somehow
+        # that always ended up overwriting more specific modes. :s
+        print("Error, no mode specified (mode was {}). For help, try -h".format(A.mode))
     if A.mode == 'tests':
         test()
     elif A.mode == "bench":
         bench()
     elif A.mode == 'compress':
-        A.output.write(encode(A.read().strip()))
+        title, seq = load_fasta(A.input.read().strip())
+        print("Compressing:",title,file=sys.stderr)
+        A.output.write(encode(seq))
     elif A.mode == 'decompress':
         A.output.write(decode(A.read().strip()))

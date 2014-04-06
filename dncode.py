@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
+import os
 import itertools
-import unittest
-import binascii  # Prefer to store specified testcases as hex in this file.
 import random    # For generating random test cases.
 
 def load_fasta(f, keep_non_acgtu = False):
@@ -20,15 +19,22 @@ def load_fasta(f, keep_non_acgtu = False):
         )
     return title, sequence
 
+def iter_fasta():
+    'Should yield sequence data for first block (assume monolithic) and ignore title.'
+    # Intended for large, monolithic sequence files.
+
 # Create tables
 acgt_encoding_table = {}
 acgt_decoding_table = {}
+# TODO:
+iupac_encoding_table = {}
+iupac_decoding_table = {}
 
 # For every four-letter combination of ACGT (256 possibilities):
 for n, n4 in enumerate((''.join(x) for x in itertools.product(*('ACGT',)*4))):
-    n = n.to_bytes(1,'big')
-    acgt_encoding_table[n4] = n
-    acgt_decoding_table[n] = n4
+    nb = n.to_bytes(1,'big')
+    acgt_encoding_table[n4] = nb
+    acgt_decoding_table[nb] = n4
 
 def get_encbyte(mask_len, rna=False, gzipped=False):
     '''The final byte of an encoded sequence is of form (binary):
@@ -50,10 +56,17 @@ def get_encbyte(mask_len, rna=False, gzipped=False):
 def decode_encbyte(encbyte):
     'Decodes a byte as encoded by get_encbyte'
     #encbyte = int.from_byte(encbyte, 'big') # Be explicit on endianness
+    if isinstance(encbyte, bytes):
+        if not len(encbyte) == 1:
+            raise ValueError("encbyte MAY be bytes, but must be length 1!")
+        else:
+            encbyte = int.from_bytes(encbyte, "big")
+    if (not isinstance(encbyte, int)) or encbyte > 255:
+        raise TypeError("decode_encbyte only accepts a single byte or a byte-size int. Value given was of type {} and value {}.".format(type(encbyte), encbyte))
     return dict(
-    mask_len = encbyte & 3,
-    rna      = True if encbyte & 1<<2 else False,
-    gzipped  = True if encbyte & 1<<3 else False )
+        mask_len = encbyte & 3,
+        rna      = True if encbyte & 1 << 2 else False,
+        gzipped  = True if encbyte & 1 << 3 else False )
 
 def encode(code, rna=False):
     '''Outputs a bytestring consisting of the encoded DNA, plus a mask byte.
@@ -66,21 +79,7 @@ def encode(code, rna=False):
     discarded on decoding. There is extra "room" in this last byte for other
     formatting details, such as alphabet, as a future improvement.'''
     # Iterate over the Dut DNA in four-letter chunks, maybe plus trailing.
-    output = []
-    code = code.upper().replace("U","T")
-    quadl = 0
-    for quad in [ code[i: i+4] for i in range(0, len(code), 4) ]:
-        quadl = len(quad)
-        try:
-            enc_dna = acgt_encoding_table[quad]
-        except KeyError:
-            # Should only evaluate on last quad, making all preceding lookups faster.
-            enc_dna = acgt_encoding_table[ quad + ( "A" * (4 - quadl) ) ]
-        output.append(enc_dna)
-    else:
-        mask = (4 - quadl) % 4 # Can only be 0-3, leaving unused byte-space..
-        output.append( get_encbyte(mask, rna) )
-    return b''.join(output)
+    return b''.join(iter_encode(code, rna=rna))
 
 def iter_encode(code_iter, table = acgt_encoding_table, rna=False):
     '''Iterates over sequences, preventing large sequence files being loaded into RAM.
@@ -97,103 +96,50 @@ def iter_encode(code_iter, table = acgt_encoding_table, rna=False):
         try:
             enc_dna = acgt_encoding_table[quad]
             seql += 4
-        except KeyError:
+        except KeyError as E:
             # Should only evaluate on last quad, making all preceding lookups faster.
-            enc_dna = acgt_encoding_table[ quad + ( "A" * (4 - len(quad)) ) ]
-            seql += len(quad)
+            # TODO: Make at least a token effort to ensure it's not a real KeyError.
+            if len(quad) < 4:
+                enc_dna = acgt_encoding_table[ quad + ( "A" * (4 - len(quad)) ) ]
+                seql += len(quad)
+            else:
+                raise E
         yield enc_dna
     else:
         # Generate and yield final byte.
         mask = (4 - len(quad)) % 4 # Can only be 0-3, leaving unused byte-space..
         yield get_encbyte(mask, rna)
-    
 
-def decode(enccode):
-    encbyte = enccode[-1]
-    encoding = decode_encbyte(encbyte)
-    enccode = enccode[:-1]
-    output = []
-    for b in enccode:
-        output.append( acgt_decoding_table[b.to_bytes(1,'big')] )
-    # Make code equal to the original sequence minus the mask.
-    # Must do "mask_len or None" because str[:-0] is the same as str[:0]: ''!
-    code = ''.join(output[ : -encoding['mask_len'] or None ])
+def iter_decode(enc_dna, encoding, table=acgt_decoding_table):
+    'Returns an iterator to decode the input sequence or iterator over a sequence.'
+    table = table.copy()
     if encoding['rna']:
-        code = code.replace("T","U")
-    return code
+        for k in table:
+            table[k] = table[k].replace("T","U")
+    for b in enc_dna:
+        yield table[b]
 
-class TestEncoding(unittest.TestCase):
-    @staticmethod
-    def gen_rand_dna(length):
-        return ''.join((random.choice("ACGT") for x in range(length)))
-    @staticmethod
-    def gen_rand_rna(length):
-        return gen_rand_dna(length).replace("T","U")
+def decode_all(enccode):
+    'Straight decode of a sequence. Does not support iterators.'
+    return b''.join(iter_decode(enccode[:-1], decode_encbyte(enccode[-1])))
 
-    cases = dict( [ (k, binascii.unhexlify(v)) for k,v in {
-        'ACGTCGTAGTGGTCGTGTAGTAGGCTTACGTGAGCGTTTCGGAATTCGTATGCTAGCTGTCGGGGATTATGCGTAC': 
-            b'1b6cbadbb2ca7c6e26fda0f6ce727b6a8f39b100'
-        }.items() ])
-
-    randcases = [ ''.join((random.choice("ACGT") for x in range(i))) for i in range(0,1000,100) ]
-    rnarandcases = [ x.replace("T","U") for x in randcases]
-
-    def testEncoding(self):
-        for case, encoded in self.cases.items():
-            self.assertEqual(encoded, encode(case), 'Failed to encode test-case.')
-            
-    def testDecoding(self):
-        for case, encoded in self.cases.items():
-            self.assertEqual(case, decode(encoded), 'Failed to decode test-case.')
-
-    def testRNAEncoding(self):
-        for item in self.rnarandcases:
-            encoded = encode(item,rna=True)
-            self.assertEqual(item, decode(encoded))
-      
-    def testRoundTrip(self):
-        for item in self.randcases:
-            encoded = encode(item)
-            self.assertEqual(item, decode(encoded))
-
-def test():
-    print("Running test-cases")
-    unittest.main(argv=[__name__])
-
-def bench():
-    import gzip
-    import time
-    def rand_dna(length):
-        return ''.join(random.choice("ACGT") for x in range(length))
-    def cmpcmp(seq):
-        slen = len(seq)
-        print("Comparing gzip to dncode for seqlen {}".format(slen))
-        gtime = time.time()
-        gseq = gzip.compress(seq.encode())
-        gtime = time.time() - gtime
-        dtime = time.time()
-        dseq = encode(seq)
-        dtime = time.time() - dtime
-        glen = len(gseq)
-        dlen = len(dseq)
-        print("Compression ratios: gzip={gz}; dncode={dn}".format(
-            gz=len(gseq)/slen,dn=len(dseq)/slen))
-        print("Time taken: gzip={}s, dncode={}s".format(gtime,dtime))
-
-    for i in range(100, 10000000, 100000):
-        cmpcmp(rand_dna(i))
+def iter_decode_file(file_handle):
+    'Returns an iterator from a file, after peeking at last byte for encoding.'
+    fstat = os.stat(file_handle.name)
+    # Get last byte for encoding.
+    file_handle.seek(fstat.st_size - 1)
+    enc_byte = file_handle.read()
+    file_handle.seek(0)
+    filesize_iterator = range( os.stat(file_handle.name).st_size - 1)
+    seq_iterator = ( file_handle.read(1) for i in filesize_iterator )
+    return iter_decode(seq_iterator, decode_encbyte(enc_byte))
 
 if __name__ == "__main__":
     import argparse
     import sys
     P = argparse.ArgumentParser(description="")
     subP = P.add_subparsers(help="Sub commands")
-    testP = subP.add_parser("test", help="Run test cases")
-    testP.set_defaults(mode='test')
  
-    benchP = subP.add_parser("bench", help="Run test cases")
-    benchP.set_defaults(mode='bench')
-
     compressP = subP.add_parser("compress", help="Compress a sequence file")
     compressP.set_defaults(mode='compress')    
     compressP.add_argument("input", type=argparse.FileType("r"), default=sys.stdin,
@@ -214,13 +160,14 @@ if __name__ == "__main__":
         # Tried setting a default mode to catch modeless operation but somehow
         # that always ended up overwriting more specific modes. :s
         print("Error, no mode specified (mode was {}). For help, try -h".format(A.mode))
-    if A.mode == 'tests':
-        test()
-    elif A.mode == "bench":
-        bench()
-    elif A.mode == 'compress':
+    
+    if A.mode == 'compress':
         title, seq = load_fasta(A.input.read().strip())
         print("Compressing:",title,file=sys.stderr)
-        A.output.write(encode(seq))
+        #A.output.write(encode(seq))
+        for b in iter_encode(seq):
+            A.output.write(b)
     elif A.mode == 'decompress':
-        A.output.write(decode(A.read().strip()))
+        for quad in iter_decode_file(A.input):
+            A.output.write(quad)
+        #A.output.write(decode(A.read().strip()))
